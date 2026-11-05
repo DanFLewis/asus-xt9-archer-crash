@@ -217,7 +217,40 @@ is reusable.
 ## Status
 
 The defect is characterised and a NULL-guard patch has been built, verified in
-emulation, and flashed to live hardware. See `PATCH.md` (the patch + emulation
-results), `CONTROL-FLOW.md` (why the guard is sufficient and safe), and
-`DEPLOYMENT.md` (build, device-acceptance test, and flash record). Reported here
-in case it is useful to anyone else seeing `bcm_archer_us` panics on BCM6756.
+emulation, flashed to live hardware, and has since run **crash-free in production
+for ~2 months** (see **Verification** below). See `PATCH.md` (the patch +
+emulation results), `CONTROL-FLOW.md` (why the guard is sufficient and safe), and
+`DEPLOYMENT.md` (build, device-acceptance test, and flash record).
+
+## Verification
+
+The patched image booted and has held. Both units (router + node) were flashed in
+early September 2026; the device booted the patched firmware on the first attempt,
+came back up without a boot loop or recovery-mode fallback, and IP Passthrough was
+re-established (a public address returned to the WAN interface). The patched
+`archer.ko` is the running module.
+
+Stability has been tracked since by a continuous ping/latency monitor on a wired
+LAN client, logging only state changes. Over the window **2026-09-02 → 2026-11-04**
+(the flash reboots are visible in the log at 2026-09-03 16:23–16:25):
+
+- **Zero kernel panics and zero unexpected router reboots.** The original fault
+  presents as the router going unreachable for ~2–3 min with an
+  `archer_dhd_tx_packet` crashlog at the next boot; none have occurred post-flash.
+- The `wl_pktfwd_lut_ins … roam` LUT churn that preceded the original panic still
+  appears in the router log, now **with no panic following it** — direct evidence
+  the guard is catching the NULL-slot race it was built for, rather than the
+  trigger simply having stopped occurring.
+- The one multi-minute gap in the window (2026-09-06, ~5 min) was a **wireless
+  backhaul dropout** — the mesh node de-authed and re-associated — confirmed
+  against the router syslog to carry **no reboot banner and no crashlog**. The
+  router itself never restarted. This is a separate, RF-level issue (the known
+  weakness of a wireless WDS backhaul), not the `archer` panic.
+- Remaining log entries are benign and unrelated to the router: brief (≤3 s) WAN
+  blips that recover on the next probe (upstream/ISP side), ~150–260 ms latency
+  stalls on the wireless backhaul to the node, and a few short Ethernet-link flaps
+  (3–15 s) on the monitoring client's own NIC — the router stayed reachable
+  through all of them.
+
+Reported here in case it is useful to anyone else seeing `bcm_archer_us` panics on
+BCM6756.
